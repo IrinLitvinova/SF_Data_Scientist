@@ -1,0 +1,83 @@
+with petrol_rate as 
+(
+select 
+		2600 petrol_hour,
+		'Boeing 737-300' air_model
+	union
+select 
+        1864 petrol_hour,
+		'Sukhoi Superjet-100' air_model
+),
+tfl as
+(
+select
+        ttfl.flight_id,
+        sum(ttfl.amount) income,
+        count(ttfl.ticket_no) tickets_count
+from
+        dst_project.ticket_flights ttfl
+group by 1
+),
+petrol_price as
+(
+select 
+		37837 price,
+		12 month_fly
+	union
+select 
+		38867 price,
+		1 month_fly
+			union
+select 
+		41435 price,
+		2 month_fly
+),
+sst as
+(
+select
+        st.aircraft_code,
+        count(distinct st.seat_no) seats_count
+from
+        dst_project.seats st
+group by 1
+)
+select
+    fl.flight_id,
+    fl.departure_airport,
+    fl.arrival_airport,
+    prt.city,
+    fl.actual_departure,
+    extract(dow from fl.actual_departure) day_departure,
+    extract(month from fl.actual_departure) month_dep,
+    fl.actual_arrival,
+    extract(dow from fl.actual_arrival) day_arrival,
+    cr.model,
+    cr.range,
+    date_part('hour', fl.actual_arrival - fl.actual_departure) * 60 +
+    date_part('minute', fl.actual_arrival - fl.actual_departure) time_fly,
+    tfl.tickets_count,
+    sst.seats_count,
+    (sst.seats_count - tfl.tickets_count)*100/sst.seats_count   fullness,
+    p_r.petrol_hour petrol_hour,
+    (date_part('hour', fl.actual_arrival - fl.actual_departure) * 60 +
+    date_part('minute', fl.actual_arrival - fl.actual_departure))/60 * p_r.petrol_hour petrol_fly,
+    tfl.income,
+    (date_part('hour', fl.actual_arrival - fl.actual_departure) * 60 +
+    date_part('minute', fl.actual_arrival - fl.actual_departure))/60 * p_r.petrol_hour * petrol_price.price/1000 expense,
+    tfl.income - ((date_part('hour', fl.actual_arrival - fl.actual_departure) * 60 +
+    date_part('minute', fl.actual_arrival - fl.actual_departure))/60 * p_r.petrol_hour * petrol_price.price/1000) profit
+   
+from 
+    dst_project.flights fl
+    join dst_project.airports prt on fl.arrival_airport = prt.airport_code
+    join dst_project.aircrafts cr on fl.aircraft_code = cr.aircraft_code
+    join tfl on fl.flight_id = tfl.flight_id
+    join petrol_rate p_r on cr.model = p_r.air_model
+    join petrol_price on date_part('month', fl.scheduled_departure) = petrol_price.month_fly
+    join sst on fl.aircraft_code = sst.aircraft_code
+    --join dst_project.seats st on cr.aircraft_code = st.aircraft_code
+where 
+    fl.departure_airport = 'AAQ'
+    and (date_trunc('month', fl.scheduled_departure) in ('2017-01-01','2017-02-01', '2016-12-01'))
+    and fl.status not in ('Cancelled')
+--order by profit
